@@ -131,10 +131,14 @@ class RiskEngine:
     def get_current_risk_pct(self) -> float:
         return self.current_risk_pct
 
-    def calculate_position(self, entry_price: float, sl_price: float,
+def calculate_position(self, entry_price: float, sl_price: float,
                            target_price: float = None) -> dict:
         """
         Returns: {qty, risk_amount, risk_pct, risk_per_share, viable, reason}
+
+        TEST MODE — if TEST_FIXED_QTY > 0, every viable signal trades a flat
+        qty regardless of price/capital/cost. Use this to validate strategy
+        logic before switching back to risk-based sizing for live capital.
 
         FIX A — Cost-aware sizing: the actual loss on a stopped-out trade
         includes brokerage/STT/GST/slippage on top of the raw price move.
@@ -147,12 +151,32 @@ class RiskEngine:
         worse risk:reward than the setup suggests and are not worth taking.
         """
         from execution.sl_engine import calculate_cost
-        from config.settings import MAX_COST_PCT_OF_RISK
+        from config.settings import MAX_COST_PCT_OF_RISK, TEST_FIXED_QTY
 
-        risk_amount    = CAPITAL * self.current_risk_pct / 100
         risk_per_share = entry_price - sl_price
         if risk_per_share <= 0:
             return {"viable": False, "reason": "SL >= entry price"}
+
+        # ── TEST MODE: flat qty, bypasses capital/risk sizing entirely ──────
+        if TEST_FIXED_QTY > 0:
+            qty = TEST_FIXED_QTY
+            cost = calculate_cost(entry_price, sl_price, qty)["total"]
+            price_risk = qty * risk_per_share
+            total_risk = price_risk + cost
+            return {
+                "viable"           : True,
+                "qty"              : qty,
+                "risk_amount"      : round(price_risk, 2),
+                "estimated_cost"   : round(cost, 2),
+                "total_risk"       : round(total_risk, 2),
+                "risk_pct"         : round(total_risk / CAPITAL * 100, 3),
+                "cost_pct_of_risk" : None,
+                "risk_per_share"   : round(risk_per_share, 2),
+                "capital_used"     : round(qty * entry_price, 2),
+                "mode"             : "TEST_FIXED_QTY",
+            }
+
+        risk_amount = CAPITAL * self.current_risk_pct / 100
 
         qty_by_capital = int((CAPITAL * 0.20) / entry_price)   # max 20% per trade
 
@@ -169,9 +193,6 @@ class RiskEngine:
         est_cost = calculate_cost(entry_price, sl_price, qty)["total"]
 
         # FIX A — Reduce qty so (price-move loss + costs) <= risk_amount.
-        # Solve directly: qty * risk_per_share + cost(qty) <= risk_amount.
-        # Cost scales roughly linearly with qty, so one correction pass is
-        # sufficient in practice; loop a few times to be safe.
         for _ in range(5):
             available_for_price_risk = risk_amount - est_cost
             if available_for_price_risk <= 0:
@@ -191,12 +212,10 @@ class RiskEngine:
                     "reason": f"Qty=0 after cost adjustment: risk ₹{risk_amount:.0f} too small "
                               f"for risk/share ₹{risk_per_share:.2f} once costs included"}
 
-        # Recompute final cost + actual risk at the settled qty
         final_cost  = calculate_cost(entry_price, sl_price, qty)["total"]
         price_risk  = qty * risk_per_share
-        total_risk  = price_risk + final_cost   # what you'd actually lose if SL hits
+        total_risk  = price_risk + final_cost
 
-        # FIX B — Minimum trade size filter: reject if costs dominate the trade
         cost_pct_of_risk = (final_cost / risk_amount * 100) if risk_amount > 0 else 999
         if cost_pct_of_risk > MAX_COST_PCT_OF_RISK:
             return {
@@ -209,10 +228,10 @@ class RiskEngine:
         return {
             "viable"           : True,
             "qty"              : qty,
-            "risk_amount"      : round(price_risk, 2),       # raw price-move risk
+            "risk_amount"      : round(price_risk, 2),
             "estimated_cost"   : round(final_cost, 2),
-            "total_risk"       : round(total_risk, 2),       # what you'd actually lose incl. costs
-            "risk_pct"         : round(total_risk / CAPITAL * 100, 3),  # true % risked, costs included
+            "total_risk"       : round(total_risk, 2),
+            "risk_pct"         : round(total_risk / CAPITAL * 100, 3),
             "cost_pct_of_risk" : round(cost_pct_of_risk, 1),
             "risk_per_share"   : round(risk_per_share, 2),
             "capital_used"     : round(qty * entry_price, 2),
