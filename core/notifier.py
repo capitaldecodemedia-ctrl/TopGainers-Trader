@@ -36,8 +36,11 @@ def notify(text: str):
 
 # ── Formatted alert builders ───────────────────────────────────────────────
 
-def alert_entry(symbol, entry, sl, target, qty, risk_amt, risk_pct, score, sl_model, paper=True):
+def alert_entry(symbol, entry, sl, target, qty, risk_amt, risk_pct, score, sl_model,
+                paper=True, est_cost=None, total_risk=None):
     tag = "📄 PAPER" if paper else "🟢 LIVE"
+    cost_line = f"Est. cost: ₹{est_cost:.0f}\n" if est_cost is not None else ""
+    true_risk_line = f"True risk : ₹{total_risk:.0f} (incl. costs)\n" if total_risk is not None else ""
     notify(
         f"<b>[TRADE] ENTRY {tag}</b>\n"
         f"Symbol  : <code>{symbol}</code>\n"
@@ -45,6 +48,8 @@ def alert_entry(symbol, entry, sl, target, qty, risk_amt, risk_pct, score, sl_mo
         f"SL      : ₹{sl:.2f}  ({sl_model})\n"
         f"Target  : ₹{target:.2f}\n"
         f"Risk    : ₹{risk_amt:.0f}  ({risk_pct:.2f}% of capital)\n"
+        f"{cost_line}"
+        f"{true_risk_line}"
         f"Score   : {score:.1f}/100\n"
         f"Time    : {datetime.now().strftime('%H:%M:%S')}"
     )
