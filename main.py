@@ -221,7 +221,10 @@ def scan_and_enter(order_mgr: OrderManager, risk_engine: RiskEngine):
     target = calculate_target(ltp, sl_info["sl_price"], rr=2.0)
 
     log.info(f"[SCAN] → ENTERING {sym}: entry={ltp} SL={sl_info['sl_price']} "
-             f"T={target} qty={sizing['qty']} risk=₹{sizing['risk_amount']:.0f}")
+             f"T={target} qty={sizing['qty']} "
+             f"risk=₹{sizing['risk_amount']:.0f} "
+             f"est_cost=₹{sizing.get('estimated_cost', 0):.0f} "
+             f"true_risk=₹{sizing.get('total_risk', sizing['risk_amount']):.0f}")
 
     # 9. Enter
     order_mgr.enter_trade(
@@ -232,7 +235,9 @@ def scan_and_enter(order_mgr: OrderManager, risk_engine: RiskEngine):
         risk_amount  = sizing["risk_amount"],
         risk_pct     = sizing["risk_pct"],
         sl_model     = sl_info["model"],
-        regime       = regime
+        regime       = regime,
+        est_cost     = sizing.get("estimated_cost"),
+        total_risk   = sizing.get("total_risk")
     )
 
 
