@@ -131,30 +131,91 @@ class RiskEngine:
     def get_current_risk_pct(self) -> float:
         return self.current_risk_pct
 
-    def calculate_position(self, entry_price: float, sl_price: float) -> dict:
+    def calculate_position(self, entry_price: float, sl_price: float,
+                           target_price: float = None) -> dict:
         """
-        Returns: {qty, risk_amount, risk_pct, risk_per_share, viable}
+        Returns: {qty, risk_amount, risk_pct, risk_per_share, viable, reason}
+
+        FIX A — Cost-aware sizing: the actual loss on a stopped-out trade
+        includes brokerage/STT/GST/slippage on top of the raw price move.
+        We size the position so the *combined* loss (price move + costs)
+        stays within the intended risk budget — not just the price move alone.
+
+        FIX B — Minimum trade size filter: if estimated costs would eat up
+        too large a share of the intended risk (default cap: 25%), the trade
+        is rejected outright. Small, cost-dominated trades have a structurally
+        worse risk:reward than the setup suggests and are not worth taking.
         """
-        risk_amount   = CAPITAL * self.current_risk_pct / 100
-        risk_per_share= entry_price - sl_price
+        from execution.sl_engine import calculate_cost
+        from config.settings import MAX_COST_PCT_OF_RISK
+
+        risk_amount    = CAPITAL * self.current_risk_pct / 100
+        risk_per_share = entry_price - sl_price
         if risk_per_share <= 0:
             return {"viable": False, "reason": "SL >= entry price"}
 
-        qty_by_risk   = int(risk_amount / risk_per_share)
-        qty_by_capital= int((CAPITAL * 0.20) / entry_price)   # max 20% per trade
-        qty           = min(qty_by_risk, qty_by_capital)
+        qty_by_capital = int((CAPITAL * 0.20) / entry_price)   # max 20% per trade
+
+        # First pass: naive qty ignoring costs, to get a starting estimate
+        qty_naive = int(risk_amount / risk_per_share)
+        qty = min(qty_naive, qty_by_capital)
 
         if qty < 1:
-            return {"viable": False, "reason": f"Qty=0: risk ₹{risk_amount:.0f}, risk/share ₹{risk_per_share:.2f}"}
+            return {"viable": False,
+                    "reason": f"Qty=0: risk ₹{risk_amount:.0f}, risk/share ₹{risk_per_share:.2f}"}
 
-        actual_risk = qty * risk_per_share
+        # Estimate round-trip cost at this qty (entry → stop-loss exit, the
+        # worst case scenario cost-wise since loss-side STT/slippage apply)
+        est_cost = calculate_cost(entry_price, sl_price, qty)["total"]
+
+        # FIX A — Reduce qty so (price-move loss + costs) <= risk_amount.
+        # Solve directly: qty * risk_per_share + cost(qty) <= risk_amount.
+        # Cost scales roughly linearly with qty, so one correction pass is
+        # sufficient in practice; loop a few times to be safe.
+        for _ in range(5):
+            available_for_price_risk = risk_amount - est_cost
+            if available_for_price_risk <= 0:
+                qty = 0
+                break
+            new_qty = int(available_for_price_risk / risk_per_share)
+            new_qty = min(new_qty, qty_by_capital)
+            if new_qty == qty:
+                break
+            qty = new_qty
+            if qty < 1:
+                break
+            est_cost = calculate_cost(entry_price, sl_price, qty)["total"]
+
+        if qty < 1:
+            return {"viable": False,
+                    "reason": f"Qty=0 after cost adjustment: risk ₹{risk_amount:.0f} too small "
+                              f"for risk/share ₹{risk_per_share:.2f} once costs included"}
+
+        # Recompute final cost + actual risk at the settled qty
+        final_cost  = calculate_cost(entry_price, sl_price, qty)["total"]
+        price_risk  = qty * risk_per_share
+        total_risk  = price_risk + final_cost   # what you'd actually lose if SL hits
+
+        # FIX B — Minimum trade size filter: reject if costs dominate the trade
+        cost_pct_of_risk = (final_cost / risk_amount * 100) if risk_amount > 0 else 999
+        if cost_pct_of_risk > MAX_COST_PCT_OF_RISK:
+            return {
+                "viable": False,
+                "reason": (f"Costs (₹{final_cost:.0f}) would eat {cost_pct_of_risk:.0f}% of "
+                           f"intended risk (₹{risk_amount:.0f}) — exceeds {MAX_COST_PCT_OF_RISK:.0f}% cap. "
+                           f"Trade too small to be cost-efficient.")
+            }
+
         return {
-            "viable"        : True,
-            "qty"           : qty,
-            "risk_amount"   : round(actual_risk, 2),
-            "risk_pct"      : round(actual_risk / CAPITAL * 100, 3),
-            "risk_per_share": round(risk_per_share, 2),
-            "capital_used"  : round(qty * entry_price, 2),
+            "viable"           : True,
+            "qty"              : qty,
+            "risk_amount"      : round(price_risk, 2),       # raw price-move risk
+            "estimated_cost"   : round(final_cost, 2),
+            "total_risk"       : round(total_risk, 2),       # what you'd actually lose incl. costs
+            "risk_pct"         : round(total_risk / CAPITAL * 100, 3),  # true % risked, costs included
+            "cost_pct_of_risk" : round(cost_pct_of_risk, 1),
+            "risk_per_share"   : round(risk_per_share, 2),
+            "capital_used"     : round(qty * entry_price, 2),
         }
 
     # ── Gates ─────────────────────────────────────────────────────────────
