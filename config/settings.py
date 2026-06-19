@@ -46,3 +46,10 @@ MARKET_CLOSE    = "15:30"
 # ── Derived ────────────────────────────────────────────────────────────────
 DAILY_LOSS_LIMIT   = CAPITAL * DAILY_LOSS_LIMIT_PCT / 100
 DAILY_PROFIT_TARGET= CAPITAL * DAILY_PROFIT_TARGET_PCT / 100
+
+# ── Testing mode ─────────────────────────────────────────────────────────
+# Set TEST_FIXED_QTY (Railway env var) to a positive integer e.g. 100 to
+# bypass capital/risk-based sizing entirely and trade a flat qty on every
+# signal, irrespective of stock price. Set to 0 (default) for normal
+# risk-based sizing once you're ready to go live.
+TEST_FIXED_QTY = int(os.getenv("TEST_FIXED_QTY", 0))
