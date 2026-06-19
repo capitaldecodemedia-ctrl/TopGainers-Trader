@@ -30,6 +30,12 @@ MIN_SCORE              = float(os.getenv("MIN_SCORE", 65))
 MIN_REL_VOLUME         = float(os.getenv("MIN_REL_VOLUME", 2.0))
 MIN_AVG_DAILY_VALUE_CR = float(os.getenv("MIN_AVG_DAILY_VALUE_CR", 50))
 
+# ── Cost-efficiency filter ───────────────────────────────────────────────
+# Reject a trade if estimated brokerage/STT/GST/slippage would consume more
+# than this % of the intended risk budget. Prevents small, cost-dominated
+# trades where fixed costs (~₹40-60) overwhelm a tight stop-loss.
+MAX_COST_PCT_OF_RISK = float(os.getenv("MAX_COST_PCT_OF_RISK", 25))
+
 # ── Market timing (IST) ────────────────────────────────────────────────────
 MARKET_OPEN     = "09:15"
 SCAN_START      = "09:30"   # first 15 min skipped — too chaotic
