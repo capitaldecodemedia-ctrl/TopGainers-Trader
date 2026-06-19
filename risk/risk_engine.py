@@ -238,7 +238,6 @@ def calculate_position(self, entry_price: float, sl_price: float,
         }
 
     # ── Gates ─────────────────────────────────────────────────────────────
-
     def can_trade(self) -> tuple[bool, str]:
         if self.session_stopped:
             return False, f"Session stopped: {self.stop_reason}"
