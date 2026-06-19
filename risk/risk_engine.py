@@ -131,7 +131,7 @@ class RiskEngine:
     def get_current_risk_pct(self) -> float:
         return self.current_risk_pct
 
-def calculate_position(self, entry_price: float, sl_price: float,
+    def calculate_position(self, entry_price: float, sl_price: float,
                            target_price: float = None) -> dict:
         """
         Returns: {qty, risk_amount, risk_pct, risk_per_share, viable, reason}
