@@ -55,7 +55,8 @@ class OrderManager:
 
     def enter_trade(self, candidate: dict, sl_price: float, target_price: float,
                     qty: int, risk_amount: float, risk_pct: float,
-                    sl_model: str, regime: str) -> Optional[Position]:
+                    sl_model: str, regime: str,
+                    est_cost: float = None, total_risk: float = None) -> Optional[Position]:
         symbol      = candidate["symbol"]
         entry_price = candidate["ltp"]
 
@@ -82,7 +83,7 @@ class OrderManager:
 
         alert_entry(symbol, fill_price, sl_price, target_price,
                     qty, risk_amount, risk_pct, candidate["score"],
-                    sl_model, PAPER_TRADE)
+                    sl_model, PAPER_TRADE, est_cost=est_cost, total_risk=total_risk)
         return pos
 
     # ── Exit ───────────────────────────────────────────────────────────────
